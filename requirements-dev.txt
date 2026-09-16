@@ -1,0 +1,7 @@
+# Local development only — not installed in the Docker image.
+-r requirements.txt
+
+pytest>=8.0,<9
+ruff>=0.4,<1
+
+jupyter>=1.0,<2
