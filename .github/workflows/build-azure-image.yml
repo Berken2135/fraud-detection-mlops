@@ -1,0 +1,38 @@
+name: Build Azure image
+
+# Builds deploy/azure/Dockerfile and pushes it to Azure Container Registry,
+# for machines without a working Docker (Azure for Students blocks ACR Tasks).
+# Needs the exported model committed (git add -f model) and two repository
+# secrets: ACR_NAME (registry name) and ACR_PASSWORD (registry admin password).
+# Then deploy with: BUILD_MODE=skip ./deploy/azure/deploy.sh
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    env:
+      ACR_NAME: ${{ secrets.ACR_NAME }}
+      APP_NAME: fraud-detection-api
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check exported model
+        run: |
+          if [[ ! -f model/MLmodel ]]; then
+            echo "::error::model/ is not in the repository: run 'python -m src.export_model', then 'git add -f model' and push."
+            exit 1
+          fi
+
+      - name: Log in to Azure Container Registry
+        env:
+          ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
+        run: echo "$ACR_PASSWORD" | docker login "${ACR_NAME}.azurecr.io" --username "$ACR_NAME" --password-stdin
+
+      - name: Build and push
+        run: |
+          IMAGE="${ACR_NAME}.azurecr.io/${APP_NAME}:${GITHUB_SHA::7}"
+          docker build --platform linux/amd64 -f deploy/azure/Dockerfile -t "$IMAGE" .
+          docker push "$IMAGE"
+          echo "Pushed $IMAGE" >> "$GITHUB_STEP_SUMMARY"
