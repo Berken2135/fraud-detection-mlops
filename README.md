@@ -160,6 +160,12 @@ zero when idle. Set `WITH_POSTGRES=0` to deploy the API alone. On Windows, run t
 scripts from Git Bash (`bash deploy/azure/deploy.sh`). Re-running
 the script rebuilds the image and updates the app in place.
 
+Without a working local Docker, build the image on GitHub Actions instead:
+enable the registry's admin user (`az acr update -n <registry> --admin-enabled true`),
+add `ACR_NAME` and `ACR_PASSWORD` (from `az acr credential show`) as repository
+secrets, commit the exported model (`git add -f model`), run the **Build Azure
+image** workflow, then deploy that image with `BUILD_MODE=skip ./deploy/azure/deploy.sh`.
+
 ## API reference
 
 | Method | Endpoint | Description |

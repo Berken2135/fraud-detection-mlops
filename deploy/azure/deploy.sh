@@ -11,6 +11,8 @@
 # Usage (from the repository root; on Windows run it from Git Bash):
 #   PG_PASSWORD='...' ./deploy/azure/deploy.sh
 #   WITH_POSTGRES=0 ./deploy/azure/deploy.sh   # API only, no prediction logging
+#   BUILD_MODE=skip ./deploy/azure/deploy.sh   # use the newest image already in the
+#                                              # registry (pushed by the "Build Azure image" workflow)
 # Re-running it rebuilds the image and updates the running app.
 # Remove everything with ./deploy/azure/teardown.sh
 set -euo pipefail
@@ -21,15 +23,17 @@ APP_NAME="${APP_NAME:-fraud-detection-api}"
 ENV_NAME="${ENV_NAME:-fraud-detection-env}"
 WITH_POSTGRES="${WITH_POSTGRES:-1}"
 PG_ADMIN="${PG_ADMIN:-fraudadmin}"
+IMAGE_TAG_SET="${IMAGE_TAG:-}"
 IMAGE_TAG="${IMAGE_TAG:-$(git rev-parse --short HEAD)}"
 
 # Registry and Postgres server names must be globally unique: derive them from the subscription id.
 SUB_SUFFIX="$(az account show --query id -o tsv | tr -d '\r-' | cut -c1-8)"
 ACR_NAME="${ACR_NAME:-fraudapi${SUB_SUFFIX}}"
 PG_SERVER="${PG_SERVER:-fraud-pg-${SUB_SUFFIX}}"
+BUILD_MODE="${BUILD_MODE:-auto}"
 IMAGE="${ACR_NAME}.azurecr.io/${APP_NAME}:${IMAGE_TAG}"
 
-if [[ ! -f model/MLmodel ]]; then
+if [[ "$BUILD_MODE" != "skip" && ! -f model/MLmodel ]]; then
   echo "model/ not found: run 'python -m src.export_model' after training first." >&2
   exit 1
 fi
@@ -54,13 +58,24 @@ fi
 
 # Build locally with Docker when it is running: Azure for Students subscriptions
 # reject cloud builds (ACR Tasks) with TasksOperationsNotAllowed.
-# BUILD_MODE=cloud forces az acr build instead.
-if [[ "${BUILD_MODE:-auto}" != "cloud" ]] && docker info >/dev/null 2>&1; then
+# BUILD_MODE=cloud forces az acr build instead; BUILD_MODE=skip builds nothing.
+if [[ "$BUILD_MODE" == "skip" ]]; then
+  if [[ -z "${IMAGE_TAG_SET:-}" ]]; then
+    IMAGE_TAG="$(az acr repository show-tags --name "$ACR_NAME" --repository "$APP_NAME" \
+      --orderby time_desc --top 1 -o tsv 2>/dev/null | tr -d '\r')"
+    if [[ -z "$IMAGE_TAG" ]]; then
+      echo "No image in $ACR_NAME yet: run the \"Build Azure image\" workflow on GitHub first." >&2
+      exit 1
+    fi
+    IMAGE="${ACR_NAME}.azurecr.io/${APP_NAME}:${IMAGE_TAG}"
+  fi
+  echo "==> Skipping build, deploying $IMAGE"
+elif [[ "$BUILD_MODE" != "cloud" ]] && docker info >/dev/null 2>&1; then
   echo "==> Building $IMAGE with local Docker and pushing it"
   docker build --platform linux/amd64 -f deploy/azure/Dockerfile -t "$IMAGE" .
   az acr login --name "$ACR_NAME"
   docker push "$IMAGE"
-elif [[ "${BUILD_MODE:-auto}" == "local" ]]; then
+elif [[ "$BUILD_MODE" == "local" ]]; then
   echo "BUILD_MODE=local but Docker is not running: start Docker Desktop and re-run." >&2
   exit 1
 else
