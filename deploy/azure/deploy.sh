@@ -62,7 +62,7 @@ fi
 if [[ "$BUILD_MODE" == "skip" ]]; then
   if [[ -z "${IMAGE_TAG_SET:-}" ]]; then
     IMAGE_TAG="$(az acr repository show-tags --name "$ACR_NAME" --repository "$APP_NAME" \
-      --orderby time_desc --top 1 -o tsv 2>/dev/null | tr -d '\r')"
+      --orderby time_desc --top 1 -o tsv 2>/dev/null | tr -d '\r' || true)"
     if [[ -z "$IMAGE_TAG" ]]; then
       echo "No image in $ACR_NAME yet: run the \"Build Azure image\" workflow on GitHub first." >&2
       exit 1
