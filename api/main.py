@@ -1,12 +1,15 @@
 """FastAPI prediction service.
 
 Loads the "production"-aliased model from the MLflow Model Registry at
-startup. If no production model exists yet (e.g. before the first
+startup, or, when MODEL_PATH is set (cloud deployment), a model exported
+with `python -m src.export_model`. If no production model exists yet (e.g. before the first
 `python -m src.train` run), the service still starts — /health reports
 `model_loaded: false` and /predict returns 503 until a model is promoted
 and /admin/reload-model is called (or the service is restarted).
 """
+import json
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import mlflow
 import mlflow.sklearn
@@ -28,8 +31,26 @@ from src import config
 model_state: dict = {"model": None, "threshold": config.DEFAULT_THRESHOLD, "version": None}
 
 
+def load_exported_model(path: str) -> None:
+    """Loads a model directory written by src.export_model, with its threshold
+    and registry version stored alongside it in MODEL_META_FILE."""
+    try:
+        model_state["model"] = mlflow.sklearn.load_model(path)
+        meta = json.loads((Path(path) / config.MODEL_META_FILE).read_text())
+        model_state["threshold"] = float(meta.get("threshold", config.DEFAULT_THRESHOLD))
+        model_state["version"] = meta.get("version")
+        print(f"Loaded exported model version {model_state['version']} (threshold={model_state['threshold']:.4f})")
+    except (OSError, ValueError, MlflowException) as exc:
+        model_state["model"] = None
+        model_state["version"] = None
+        print(f"WARNING: could not load exported model from {path} ({exc}).")
+
+
 def load_production_model() -> None:
     """Loads the current production model + its stored threshold, if one exists."""
+    if config.MODEL_PATH:
+        load_exported_model(config.MODEL_PATH)
+        return
     mlflow.set_tracking_uri(config.MLFLOW_TRACKING_URI)
     try:
         client = MlflowClient()
