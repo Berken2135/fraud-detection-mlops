@@ -7,7 +7,7 @@
 #   - a trained model exported to model/ (python -m src.export_model)
 #   - PG_PASSWORD set (8+ chars, upper + lower case + digit)
 #
-# Usage (from the repository root):
+# Usage (from the repository root; on Windows run it from Git Bash):
 #   PG_PASSWORD='...' ./deploy/azure/deploy.sh
 #   WITH_POSTGRES=0 ./deploy/azure/deploy.sh   # API only, no prediction logging
 # Re-running it rebuilds the image and updates the running app.
@@ -23,7 +23,7 @@ PG_ADMIN="${PG_ADMIN:-fraudadmin}"
 IMAGE_TAG="${IMAGE_TAG:-$(git rev-parse --short HEAD)}"
 
 # Registry and Postgres server names must be globally unique: derive them from the subscription id.
-SUB_SUFFIX="$(az account show --query id -o tsv | tr -d '-' | cut -c1-8)"
+SUB_SUFFIX="$(az account show --query id -o tsv | tr -d '\r-' | cut -c1-8)"
 ACR_NAME="${ACR_NAME:-fraudapi${SUB_SUFFIX}}"
 PG_SERVER="${PG_SERVER:-fraud-pg-${SUB_SUFFIX}}"
 IMAGE="${ACR_NAME}.azurecr.io/${APP_NAME}:${IMAGE_TAG}"
@@ -65,7 +65,9 @@ if [[ "$WITH_POSTGRES" == "1" ]]; then
     az postgres flexible-server db create \
       --resource-group "$RESOURCE_GROUP" --server-name "$PG_SERVER" --database-name fraud_detection --output none
   fi
-  ENCODED_PW="$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$PG_PASSWORD")"
+  # Windows (Git Bash) venvs ship python.exe but no python3.exe, so try both.
+  for PY in python3 python; do "$PY" -c 'pass' 2>/dev/null && break; done
+  ENCODED_PW="$("$PY" -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$PG_PASSWORD")"
   DATABASE_URL="postgresql+psycopg2://${PG_ADMIN}:${ENCODED_PW}@${PG_SERVER}.postgres.database.azure.com:5432/fraud_detection?sslmode=require"
 fi
 
@@ -97,7 +99,7 @@ else
 fi
 
 FQDN="$(az containerapp show --resource-group "$RESOURCE_GROUP" --name "$APP_NAME" \
-  --query properties.configuration.ingress.fqdn -o tsv)"
+  --query properties.configuration.ingress.fqdn -o tsv | tr -d '\r')"
 echo
 echo "Deployed: https://${FQDN}"
 echo "  health: https://${FQDN}/health"
