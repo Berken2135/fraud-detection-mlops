@@ -4,6 +4,7 @@
 #
 # Prerequisites:
 #   - Azure CLI, logged in (az login)
+#   - Docker running locally (Azure for Students blocks cloud builds; see below)
 #   - a trained model exported to model/ (python -m src.export_model)
 #   - PG_PASSWORD set (8+ chars, upper + lower case + digit)
 #
@@ -46,11 +47,29 @@ done
 echo "==> Resource group $RESOURCE_GROUP ($LOCATION)"
 az group create --name "$RESOURCE_GROUP" --location "$LOCATION" --output none
 
-echo "==> Container registry $ACR_NAME, building $IMAGE in the cloud"
+echo "==> Container registry $ACR_NAME"
 if ! az acr show --name "$ACR_NAME" --output none 2>/dev/null; then
   az acr create --resource-group "$RESOURCE_GROUP" --name "$ACR_NAME" --sku Basic --output none
 fi
-az acr build --registry "$ACR_NAME" --image "${APP_NAME}:${IMAGE_TAG}" --file deploy/azure/Dockerfile .
+
+# Build locally with Docker when it is running: Azure for Students subscriptions
+# reject cloud builds (ACR Tasks) with TasksOperationsNotAllowed.
+# BUILD_MODE=cloud forces az acr build instead.
+if [[ "${BUILD_MODE:-auto}" != "cloud" ]] && docker info >/dev/null 2>&1; then
+  echo "==> Building $IMAGE with local Docker and pushing it"
+  docker build --platform linux/amd64 -f deploy/azure/Dockerfile -t "$IMAGE" .
+  az acr login --name "$ACR_NAME"
+  docker push "$IMAGE"
+elif [[ "${BUILD_MODE:-auto}" == "local" ]]; then
+  echo "BUILD_MODE=local but Docker is not running: start Docker Desktop and re-run." >&2
+  exit 1
+else
+  echo "==> Docker not running, building $IMAGE in the cloud (ACR Tasks)"
+  if ! az acr build --registry "$ACR_NAME" --image "${APP_NAME}:${IMAGE_TAG}" --file deploy/azure/Dockerfile .; then
+    echo "Cloud build failed. Azure for Students blocks ACR Tasks: install and start Docker Desktop, then re-run." >&2
+    exit 1
+  fi
+fi
 
 DATABASE_URL=""
 if [[ "$WITH_POSTGRES" == "1" ]]; then
