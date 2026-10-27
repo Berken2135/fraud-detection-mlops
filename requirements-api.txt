@@ -1,0 +1,13 @@
+# Minimal runtime dependencies for the API container only (deploy/azure/Dockerfile).
+# Training, orchestration and monitoring tools stay in requirements.txt, which
+# made the image slow to build (Prefect, Evidently and their dependencies).
+pandas>=2.2,<3
+numpy>=1.26,<2
+scikit-learn>=1.4,<1.6
+xgboost>=2.0,<3
+mlflow>=2.14,<3
+fastapi>=0.110,<1
+uvicorn[standard]>=0.29,<1
+pydantic>=2.6,<2.11
+psycopg2-binary>=2.9,<3
+SQLAlchemy>=2.0,<3
