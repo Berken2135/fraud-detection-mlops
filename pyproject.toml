@@ -8,3 +8,5 @@ select = ["E", "F", "I"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# tests import src/, api/, pipelines/ and monitoring/ from the repo root
+pythonpath = ["."]

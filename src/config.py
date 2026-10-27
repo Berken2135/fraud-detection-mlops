@@ -43,5 +43,12 @@ DATABASE_URL: str = os.environ.get(
     "DATABASE_URL", "postgresql+psycopg2://postgres:postgres@127.0.0.1:5432/fraud_detection"
 )
 
+# Cloud deployment (Azure Container Apps): when MODEL_PATH is set, the API
+# serves a model exported with `python -m src.export_model` from that
+# directory instead of reading the MLflow registry, so no MLflow server is needed.
+MODEL_PATH: str | None = os.environ.get("MODEL_PATH")
+EXPORT_DIR: Path = PROJECT_ROOT / "model"
+MODEL_META_FILE: str = "fraud_meta.json"
+
 # Retraining: fraction of features Evidently must flag as drifted to trigger a retrain.
 DRIFT_SHARE_THRESHOLD: float = 0.3

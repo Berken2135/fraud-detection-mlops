@@ -6,7 +6,7 @@
 ![Prefect](https://img.shields.io/badge/orchestration-Prefect-070E10)
 ![Evidently](https://img.shields.io/badge/monitoring-Evidently-ff4b7d)
 ![Docker](https://img.shields.io/badge/container-Docker-2496ED)
-![Tests](https://img.shields.io/badge/tests-20%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-23%20passing-brightgreen)
 ![Lint](https://img.shields.io/badge/lint-ruff-261230)
 
 An end-to-end MLOps pipeline built around the Kaggle [Credit Card Fraud
@@ -23,6 +23,7 @@ CI/CD.
 - [Tech stack](#tech-stack)
 - [Project structure](#project-structure)
 - [Getting started](#getting-started)
+- [Deploying to Azure](#deploying-to-azure)
 - [API reference](#api-reference)
 - [Exploratory data analysis](#exploratory-data-analysis)
 - [Model results](#model-results)
@@ -83,6 +84,7 @@ fraud-detection-mlops/
 ├── pipelines/            Prefect retraining flow
 ├── monitoring/           traffic simulation + Evidently drift check
 ├── tests/                pytest suite (synthetic data only, no CSV dependency)
+├── deploy/azure/         Dockerfile + deploy/teardown scripts for Azure Container Apps
 ├── .github/workflows/    CI: lint + test + docker build
 ├── Dockerfile
 ├── docker-compose.yml    postgres + mlflow + api
@@ -134,6 +136,28 @@ The API starts even with no model registered yet — `/health` reports
 make drift    # simulates traffic (with injected drift) against the running API, then checks drift
 make retrain  # runs the Prefect retraining flow (drift check -> conditional retrain -> promote)
 ```
+
+## Deploying to Azure
+
+The API runs on **Azure Container Apps**, with prediction logs in **Azure
+Database for PostgreSQL** (Flexible Server, Burstable B1ms). There is no
+MLflow server in the cloud: the production model is exported from the
+registry and baked into the image, and the API loads it via `MODEL_PATH`.
+
+```bash
+python -m src.train          # train + promote a production model locally
+python -m src.export_model   # write it to model/ (with its threshold)
+az login
+PG_PASSWORD='...' ./deploy/azure/deploy.sh   # prints the public URL
+./deploy/azure/teardown.sh   # delete everything when done
+```
+
+`deploy.sh` builds the image in Azure Container Registry (`az acr build`,
+no local Docker needed), creates the Postgres server and the container app,
+and passes the database URL as a Container Apps secret. The app scales to
+zero when idle. Set `WITH_POSTGRES=0` to deploy the API alone. On Windows, run the
+scripts from Git Bash (`bash deploy/azure/deploy.sh`). Re-running
+the script rebuilds the image and updates the app in place.
 
 ## API reference
 

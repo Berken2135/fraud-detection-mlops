@@ -21,3 +21,6 @@ notebooks/.ipynb_checkpoints/
 .DS_Store
 
 .claude/
+
+# exported model for the container image (python -m src.export_model)
+model/
