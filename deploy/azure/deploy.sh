@@ -119,8 +119,16 @@ if ! az containerapp env show --resource-group "$RESOURCE_GROUP" --name "$ENV_NA
   az containerapp env create --resource-group "$RESOURCE_GROUP" --name "$ENV_NAME" --location "$LOCATION" --output none
 fi
 
+# Pull with the registry admin credentials: Container Apps "express"
+# environments, which newer CLIs can create, reject managed-identity pulls.
+az acr update --name "$ACR_NAME" --admin-enabled true --output none
+ACR_PASSWORD="$(az acr credential show --name "$ACR_NAME" --query "passwords[0].value" -o tsv | tr -d '\r')"
+REGISTRY_ARGS=(--registry-server "${ACR_NAME}.azurecr.io" --registry-username "$ACR_NAME" --registry-password "$ACR_PASSWORD")
+
 echo "==> Container app $APP_NAME"
 if az containerapp show --resource-group "$RESOURCE_GROUP" --name "$APP_NAME" --output none 2>/dev/null; then
+  az containerapp registry set --resource-group "$RESOURCE_GROUP" --name "$APP_NAME" \
+    --server "${ACR_NAME}.azurecr.io" --username "$ACR_NAME" --password "$ACR_PASSWORD" --output none
   if [[ -n "$DATABASE_URL" ]]; then
     az containerapp secret set --resource-group "$RESOURCE_GROUP" --name "$APP_NAME" \
       --secrets "database-url=${DATABASE_URL}" --output none
@@ -135,7 +143,7 @@ else
   # Scales to zero when idle, so the app costs nothing between demo requests.
   az containerapp create \
     --resource-group "$RESOURCE_GROUP" --name "$APP_NAME" --environment "$ENV_NAME" \
-    --image "$IMAGE" --registry-server "${ACR_NAME}.azurecr.io" --registry-identity system \
+    --image "$IMAGE" "${REGISTRY_ARGS[@]}" \
     --target-port 8000 --ingress external \
     --min-replicas 0 --max-replicas 1 --cpu 0.5 --memory 1.0Gi \
     ${DB_ARGS[@]+"${DB_ARGS[@]}"} --output none
