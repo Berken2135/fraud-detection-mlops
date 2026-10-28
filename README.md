@@ -155,7 +155,8 @@ PG_PASSWORD='...' ./deploy/azure/deploy.sh   # prints the public URL
 `deploy.sh` builds the image with local Docker and pushes it to Azure
 Container Registry (falling back to `az acr build` when Docker isn't running;
 Azure for Students subscriptions block those cloud builds), creates the Postgres server and the container app,
-and passes the database URL as a Container Apps secret. The app scales to
+and passes the database URL as a Container Apps secret. `/admin/reload-model` is disabled on the
+deployed app unless you pass `ADMIN_API_KEY`, which it then requires in the `X-API-Key` header. The app scales to
 zero when idle. Set `WITH_POSTGRES=0` to deploy the API alone. On Windows, run the
 scripts from Git Bash (`bash deploy/azure/deploy.sh`). Re-running
 the script rebuilds the image and updates the app in place.

@@ -47,6 +47,11 @@ DATABASE_URL: str = os.environ.get(
 # serves a model exported with `python -m src.export_model` from that
 # directory instead of reading the MLflow registry, so no MLflow server is needed.
 MODEL_PATH: str | None = os.environ.get("MODEL_PATH")
+
+# When set, /admin/* endpoints require it in the X-API-Key header. Without it
+# they stay open for local development, but are disabled on a cloud deployment
+# (MODEL_PATH set), so a public URL never exposes them unauthenticated.
+ADMIN_API_KEY: str | None = os.environ.get("ADMIN_API_KEY")
 EXPORT_DIR: Path = PROJECT_ROOT / "model"
 MODEL_META_FILE: str = "fraud_meta.json"
 

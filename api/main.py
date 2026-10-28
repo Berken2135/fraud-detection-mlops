@@ -8,13 +8,14 @@ with `python -m src.export_model`. If no production model exists yet (e.g. befor
 and /admin/reload-model is called (or the service is restarted).
 """
 import json
+import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 import mlflow
 import mlflow.sklearn
 import pandas as pd
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Header, HTTPException
 from mlflow.exceptions import MlflowException
 from mlflow.tracking import MlflowClient
 
@@ -155,9 +156,19 @@ def predict_batch(batch: BatchRequest) -> BatchPredictionResponse:
     )
 
 
+def require_admin_key(x_api_key: str | None) -> None:
+    if config.ADMIN_API_KEY:
+        if not x_api_key or not secrets.compare_digest(x_api_key, config.ADMIN_API_KEY):
+            raise HTTPException(status_code=401, detail="Invalid or missing X-API-Key")
+    elif config.MODEL_PATH:
+        raise HTTPException(status_code=403, detail="Admin endpoints are disabled: ADMIN_API_KEY is not set")
+
+
 @app.post("/admin/reload-model", response_model=HealthResponse)
-def reload_model() -> HealthResponse:
+def reload_model(x_api_key: str | None = Header(default=None)) -> HealthResponse:
     """Re-reads the "production" alias from the registry without restarting
-    the service — call this after a retraining run promotes a new model."""
+    the service — call this after a retraining run promotes a new model.
+    Requires the X-API-Key header when ADMIN_API_KEY is set."""
+    require_admin_key(x_api_key)
     load_production_model()
     return health()
