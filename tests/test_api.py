@@ -91,3 +91,25 @@ def test_predict_returns_503_when_model_not_loaded(monkeypatch):
         health = client.get("/health").json()
         assert health["status"] == "degraded"
         assert health["model_loaded"] is False
+
+
+def test_reload_model_open_locally_without_key(monkeypatch):
+    client = _client(monkeypatch)
+    monkeypatch.setattr(api_main.config, "ADMIN_API_KEY", None)
+    monkeypatch.setattr(api_main.config, "MODEL_PATH", None)
+    assert client.post("/admin/reload-model").status_code == 200
+
+
+def test_reload_model_disabled_in_cloud_without_key(monkeypatch):
+    client = _client(monkeypatch)
+    monkeypatch.setattr(api_main.config, "ADMIN_API_KEY", None)
+    monkeypatch.setattr(api_main.config, "MODEL_PATH", "/app/model")
+    assert client.post("/admin/reload-model").status_code == 403
+
+
+def test_reload_model_requires_matching_key(monkeypatch):
+    client = _client(monkeypatch)
+    monkeypatch.setattr(api_main.config, "ADMIN_API_KEY", "s3cret")
+    assert client.post("/admin/reload-model").status_code == 401
+    assert client.post("/admin/reload-model", headers={"X-API-Key": "wrong"}).status_code == 401
+    assert client.post("/admin/reload-model", headers={"X-API-Key": "s3cret"}).status_code == 200

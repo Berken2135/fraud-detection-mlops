@@ -11,6 +11,7 @@
 # Usage (from the repository root; on Windows run it from Git Bash):
 #   PG_PASSWORD='...' ./deploy/azure/deploy.sh
 #   WITH_POSTGRES=0 ./deploy/azure/deploy.sh   # API only, no prediction logging
+#   ADMIN_API_KEY='...' ./deploy/azure/deploy.sh   # enable /admin endpoints (X-API-Key header)
 #   BUILD_MODE=skip ./deploy/azure/deploy.sh   # use the newest image already in the
 #                                              # registry (pushed by the "Build Azure image" workflow)
 # Re-running it rebuilds the image and updates the running app.
@@ -119,6 +120,21 @@ if ! az containerapp env show --resource-group "$RESOURCE_GROUP" --name "$ENV_NA
   az containerapp env create --resource-group "$RESOURCE_GROUP" --name "$ENV_NAME" --location "$LOCATION" --output none
 fi
 
+# Secrets and the env vars that reference them.
+# ${arr[@]+...} below keeps an empty array safe under set -u on macOS bash 3.2.
+SECRETS=()
+ENV_VARS=()
+if [[ -n "$DATABASE_URL" ]]; then
+  SECRETS+=("database-url=${DATABASE_URL}")
+  ENV_VARS+=("DATABASE_URL=secretref:database-url")
+fi
+if [[ -n "${ADMIN_API_KEY:-}" ]]; then
+  SECRETS+=("admin-api-key=${ADMIN_API_KEY}")
+  ENV_VARS+=("ADMIN_API_KEY=secretref:admin-api-key")
+else
+  echo "    ADMIN_API_KEY not set: /admin endpoints stay disabled on the deployed app"
+fi
+
 # Pull with the registry admin credentials: Container Apps "express"
 # environments, which newer CLIs can create, reject managed-identity pulls.
 az acr update --name "$ACR_NAME" --admin-enabled true --output none
@@ -129,16 +145,18 @@ echo "==> Container app $APP_NAME"
 if az containerapp show --resource-group "$RESOURCE_GROUP" --name "$APP_NAME" --output none 2>/dev/null; then
   az containerapp registry set --resource-group "$RESOURCE_GROUP" --name "$APP_NAME" \
     --server "${ACR_NAME}.azurecr.io" --username "$ACR_NAME" --password "$ACR_PASSWORD" --output none
-  if [[ -n "$DATABASE_URL" ]]; then
+  ENV_ARGS=()
+  if [[ -n "${SECRETS[*]+x}" ]]; then
     az containerapp secret set --resource-group "$RESOURCE_GROUP" --name "$APP_NAME" \
-      --secrets "database-url=${DATABASE_URL}" --output none
+      --secrets "${SECRETS[@]}" --output none
+    ENV_ARGS=(--set-env-vars "${ENV_VARS[@]}")
   fi
-  az containerapp update --resource-group "$RESOURCE_GROUP" --name "$APP_NAME" --image "$IMAGE" --output none
+  az containerapp update --resource-group "$RESOURCE_GROUP" --name "$APP_NAME" --image "$IMAGE" \
+    ${ENV_ARGS[@]+"${ENV_ARGS[@]}"} --output none
 else
-  # ${arr[@]+...} below keeps an empty array safe under set -u on macOS bash 3.2.
-  DB_ARGS=()
-  if [[ -n "$DATABASE_URL" ]]; then
-    DB_ARGS=(--secrets "database-url=${DATABASE_URL}" --env-vars "DATABASE_URL=secretref:database-url")
+  SECRET_ARGS=()
+  if [[ -n "${SECRETS[*]+x}" ]]; then
+    SECRET_ARGS=(--secrets "${SECRETS[@]}" --env-vars "${ENV_VARS[@]}")
   fi
   # Scales to zero when idle, so the app costs nothing between demo requests.
   az containerapp create \
@@ -146,7 +164,7 @@ else
     --image "$IMAGE" "${REGISTRY_ARGS[@]}" \
     --target-port 8000 --ingress external \
     --min-replicas 0 --max-replicas 1 --cpu 0.5 --memory 1.0Gi \
-    ${DB_ARGS[@]+"${DB_ARGS[@]}"} --output none
+    ${SECRET_ARGS[@]+"${SECRET_ARGS[@]}"} --output none
 fi
 
 FQDN="$(az containerapp show --resource-group "$RESOURCE_GROUP" --name "$APP_NAME" \
