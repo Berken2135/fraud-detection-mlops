@@ -96,8 +96,17 @@ if [[ "$WITH_POSTGRES" == "1" ]]; then
       --tier Burstable --sku-name Standard_B1ms --storage-size 32 --version 16 \
       --admin-user "$PG_ADMIN" --admin-password "$PG_PASSWORD" \
       --public-access 0.0.0.0 --yes --output none
-    az postgres flexible-server db create \
-      --resource-group "$RESOURCE_GROUP" --server-name "$PG_SERVER" --database-name fraud_detection --output none
+  fi
+  # Separate check so a re-run creates the database if an earlier run stopped
+  # after the server. Newer Azure CLIs renamed --database-name to --name.
+  if ! az postgres flexible-server db show --resource-group "$RESOURCE_GROUP" --server-name "$PG_SERVER" \
+      --database-name fraud_detection --output none 2>/dev/null &&
+    ! az postgres flexible-server db show --resource-group "$RESOURCE_GROUP" --server-name "$PG_SERVER" \
+      --name fraud_detection --output none 2>/dev/null; then
+    az postgres flexible-server db create --resource-group "$RESOURCE_GROUP" --server-name "$PG_SERVER" \
+      --name fraud_detection --output none 2>/dev/null ||
+      az postgres flexible-server db create --resource-group "$RESOURCE_GROUP" --server-name "$PG_SERVER" \
+        --database-name fraud_detection --output none
   fi
   # Windows (Git Bash) venvs ship python.exe but no python3.exe, so try both.
   for PY in python3 python; do "$PY" -c 'pass' 2>/dev/null && break; done
